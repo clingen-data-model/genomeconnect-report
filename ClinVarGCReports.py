@@ -12,12 +12,16 @@ import xlsxwriter
 orgDict = {} #scv->orgID
 submitterDict = {} #orgID->submitter
 gcVarIDs = []
+gcVarIDsBySub = {}
 scvHash = {}
 a2vHash = {}
 HGVSHash = {}
 EPHash = {}
-sub = 'GenomeConnect_ClinGen'
+submitters = ['GenomeConnect_ClinGen', 'GenomeConnect_CFC_International', 'GenomeConnect_CureCADASIL']
 
+# initialize
+for submitter in submitters:
+    gcVarIDsBySub[submitter] = []
 
 def get_file(file, path):
     '''This function gets NCBI files from FTP'''
@@ -102,8 +106,7 @@ def create_scvHash(gzfile):
                     revStat = col[6]
                     colMeth = col[7]
 
-                    submitter = col[9]
-                    submitter = re.sub('[^0-9a-zA-Z]+', '_', submitter)
+                    submitter = name_mangle(col[9])
 
                     SCV = col[10]
                     accession = col[10].split('.', 1)[0]
@@ -116,8 +119,9 @@ def create_scvHash(gzfile):
                     if (revStat == 'reviewed by expert panel' or revStat == 'practice guideline') and 'PharmGKB' not in submitter: #-- to exclude PharmGKB records
                         EPHash[varID] = {'ClinSig':clinSig, 'Submitter':submitter, 'DateLastEval':dateLastEval, 'OrgID':orgID}
 
-                    if submitter == sub and varID not in gcVarIDs:
+                    if submitter in submitters and varID not in gcVarIDs:
                         gcVarIDs.append(varID)
+                        gcVarIDsBySub[submitter].append(varID)
 
                     if varID not in scvHash.keys():
                         scvHash[varID] = {}
@@ -172,8 +176,7 @@ def add_labdata(gzfile):
 
                                             if Attr.text != None:
                                                 labName = Attr.text
-                                                labName = re.sub('[^0-9a-zA-Z]+', '_', labName)
-
+                                                labName = name_mangle(labName)
                                             else:
                                                 if labCode != 'None' and labCode in submitterDict:
                                                     labName = submitterDict[labCode]
@@ -257,38 +260,60 @@ def create_HGVSHash(gzfile):
     return(HGVSHash)
 
 
+def name_mangle(orgName):
+    mangledName = orgName.rstrip()
+    mangledName = re.sub('[^0-9a-zA-Z]+', '_', mangledName)
+    mangledName = mangledName[0:45]
+
+    return (mangledName)
+
+
 def create_files(ExcelDir, excelFile, date):
     '''This function creates an Excel file'''
 
     dir = ExcelDir
 
-    sub_output_file = dir + '/' + excelFile
+    count = 0
+    orgID = 'None'
 
-    workbook = xlsxwriter.Workbook(sub_output_file)
-    worksheet0 = workbook.add_worksheet('README')
+    for submitter in submitters:
 
-    worksheet0.write(0, 0, "Date of ClinVar FTP file: " + date)
-    worksheet0.write(2, 0, "Clinical submitter: " + sub)
-    worksheet0.write(4, 0, "This Excel file is the output of a script that takes the most recent submission_summary.txt file from the ClinVar FTP site and outputs all the variants for " + sub)
-    worksheet0.write(5, 0, 'Each tab is the result of a different set of parameters as outlined below:')
-    worksheet0.write(6, 0, '#Variants:')
-    worksheet0.write(7, 1, '1. AllSubs: All ClinVar variants where there is a GenomeConnect submission.')
-    worksheet0.write(8, 1, '2. AllNovel: All ClinVar variants where the only submission is from GenomeConnect.')
-    worksheet0.write(9, 1, '3. LabConflicts: ClinVar variants where the GenomeConnect testing lab clinical significance [P] vs [LP] vs [VUS] vs [LB] vs [B] differs from the clinical lab with same name.')
-    worksheet0.write(10, 1, '4. LabConsensus: ClinVar variants where the GenomeConnect testing lab clinical significance [P] vs [LP] vs [VUS] vs [LB] vs [B] is the same as that from the clinical lab with same name.')
-    worksheet0.write(11, 1, '5. EPConflict: ClinVar variants where the GenomeConnect testing lab clinical significance [P/LP] vs [VUS] vs [LB/B] differs from an Expert Panel or Practice Guideline.')
-    worksheet0.write(12, 1, '6. Outlier: ClinVar variants where the GenomeConnect testing lab clinical significance [P/LP] vs [VUS] vs [LB/B] differs from at least one 1-star or above (or clinical testing) submitter.')
-    worksheet0.write(13, 1, '7. LabNotSubmitted: GenomeConnect SCVs where the testing lab has an OrgID but has NOT independently submitted an SCV on the variant.')
-    worksheet0.write(14, 1, '8. LabNoOrgID: GenomeConnect SCVs where the testing lab was submitted without an OrgID.')
+        count += 1
 
-    worksheet0.write(16, 0, 'Note: Tab classification counts are for unique submissions only i.e. if the same variant is submitted twice as Pathogenic by the same submitter, it will only be counted once')
-    worksheet0.write(17, 0, 'Note: A variant can occur in multiple tabs i.e. if the same variant is submitted twice, once as Pathogenic and once as Benign by the same submitter, the variant could be both an outlier and the consensus')
+        for subkey in submitterDict.keys():
+            if submitterDict[subkey] == submitter:
+                orgID = str(subkey)
+                break
 
-    tabList = [create_tab1, create_tab2, create_tab3, create_tab4, create_tab5, create_tab6, create_tab7, create_tab8]
-    for tab in tabList:
-        tab(workbook, worksheet0)
+        sub_output_file = dir + '/' + submitter + '[' + orgID + ']_' + excelFile
 
-    workbook.close()
+        workbook = xlsxwriter.Workbook(sub_output_file)
+        worksheet0 = workbook.add_worksheet('README')
+
+        worksheet0.write(0, 0, "Date of ClinVar FTP file: " + date)
+        worksheet0.write(2, 0, "Clinical submitter: " + submitter)
+        worksheet0.write(4, 0, "This Excel file is the output of a script that takes the most recent submission_summary.txt file from the ClinVar FTP site and outputs all the variants for " + submitter)
+        worksheet0.write(5, 0, 'Each tab is the result of a different set of parameters as outlined below:')
+        worksheet0.write(6, 0, '#Variants:')
+        worksheet0.write(7, 1, '1. AllSubs: All ClinVar variants where there is a GenomeConnect submission.')
+        worksheet0.write(8, 1, '2. AllNovel: All ClinVar variants where the only submission is from GenomeConnect.')
+        worksheet0.write(9, 1, '3. LabConflicts: ClinVar variants where the GenomeConnect testing lab clinical significance [P] vs [LP] vs [VUS] vs [LB] vs [B] differs from the clinical lab with same name.')
+        worksheet0.write(10, 1, '4. LabConsensus: ClinVar variants where the GenomeConnect testing lab clinical significance [P] vs [LP] vs [VUS] vs [LB] vs [B] is the same as that from the clinical lab with same name.')
+        worksheet0.write(11, 1, '5. EPConflict: ClinVar variants where the GenomeConnect testing lab clinical significance [P/LP] vs [VUS] vs [LB/B] differs from an Expert Panel or Practice Guideline.')
+        worksheet0.write(12, 1, '6. Outlier: ClinVar variants where the GenomeConnect testing lab clinical significance [P/LP] vs [VUS] vs [LB/B] differs from at least one 1-star or above (or clinical testing) submitter.')
+        worksheet0.write(13, 1, '7. LabNotSubmitted: GenomeConnect SCVs where the testing lab has an OrgID but has NOT independently submitted an SCV on the variant.')
+        worksheet0.write(14, 1, '8. LabNoOrgID: GenomeConnect SCVs where the testing lab was submitted without an OrgID.')
+
+        worksheet0.write(16, 0, 'Note: Tab classification counts are for unique submissions only i.e. if the same variant is submitted twice as Pathogenic by the same submitter, it will only be counted once')
+        worksheet0.write(17, 0, 'Note: A variant can occur in multiple tabs i.e. if the same variant is submitted twice, once as Pathogenic and once as Benign by the same submitter, the variant could be both an outlier and the consensus')
+
+        varIDs = gcVarIDsBySub[submitter]
+
+        tabList = [create_tab1, create_tab2, create_tab3, create_tab4, create_tab5, create_tab6, create_tab7, create_tab8]
+
+        for tab in tabList:
+            tab(workbook, worksheet0, submitter, varIDs)
+            workbook.close()
 
 
 def convert_date(date):
@@ -314,7 +339,7 @@ def print_date(date):
     return(printDate)
 
 
-def create_tab1(workbook, worksheet0):
+def create_tab1(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#1 (All_subs) in the Excel file'''
 
     worksheet1 = workbook.add_worksheet('1.AllSubs')
@@ -324,9 +349,9 @@ def create_tab1(workbook, worksheet0):
     p2fileVarIDs = {}
     headerSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
 
-        subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab)
+        subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab, submitter)
 
         if varID not in p2fileVarIDs.keys():
             p2fileVarIDs[varID] = {}
@@ -334,21 +359,21 @@ def create_tab1(workbook, worksheet0):
         p2fileVarIDs[varID] = {'Total':total, 'PLP':plp, 'VUS':vus, 'LBB':lbb, 'Misc':other}
 
         for SCV in scvHash[varID]:
-            if scvHash[varID][SCV]['Submitter'] != sub:
+            if scvHash[varID][SCV]['Submitter'] != submitter:
                 headerSubs.append(scvHash[varID][SCV]['Submitter'])
 
     headerSubs = sorted(set(headerSubs))
 
-    print_header(gcVarIDs, headerSubs, worksheet1, tab)
+    print_header(varIDs, headerSubs, worksheet1, tab, submitter)
 
-    for varID in gcVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet1, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+    for varID in varIDs:
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet1, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 7, 0, row)
 
 
-def create_tab2(workbook, worksheet0):
+def create_tab2(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#2 (All_novel) in the Excel file'''
 
     worksheet2 = workbook.add_worksheet('2.AllNovel')
@@ -359,19 +384,19 @@ def create_tab2(workbook, worksheet0):
     headerSubs = []
     varSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
         if len(scvHash[varID].values()) == 1:
             p2fileVarIDs.append(varID)
 
-    print_header(p2fileVarIDs, headerSubs, worksheet2, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet2, tab, submitter)
 
     for varID in p2fileVarIDs:
-        row = print_variants(worksheet2, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        row = print_variants(worksheet2, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 8, 0, row)
 
 
-def create_tab3(workbook, worksheet0):
+def create_tab3(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#3 (Lab_Conflicts) in the Excel file'''
 
     worksheet3 = workbook.add_worksheet('3.LabConflicts')
@@ -381,31 +406,32 @@ def create_tab3(workbook, worksheet0):
     p2fileVarIDs = []
     headerSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
         for SCV in scvHash[varID]:
             lab = ''
             sig = ''
-            if sub == scvHash[varID][SCV]['Submitter']:
-                lab = scvHash[varID][SCV]['LabCode']
+            if submitter == scvHash[varID][SCV]['Submitter']:
+                if 'LabCode' in scvHash[varID][SCV]:
+                    lab = scvHash[varID][SCV]['LabCode']
                 sig = scvHash[varID][SCV]['ClinSig']
                 for SCV in scvHash[varID]:
-                    if sub != scvHash[varID][SCV]['Submitter'] and scvHash[varID][SCV]['OrgID'] == lab and scvHash[varID][SCV]['ClinSig'] != sig:
+                    if submitter != scvHash[varID][SCV]['Submitter'] and scvHash[varID][SCV]['OrgID'] == lab and scvHash[varID][SCV]['ClinSig'] != sig:
                         headerSubs.append(scvHash[varID][SCV]['Submitter'])
                         if varID not in p2fileVarIDs:
                             p2fileVarIDs.append(varID)
 
     headerSubs = sorted(set(headerSubs))
 
-    print_header(p2fileVarIDs, headerSubs, worksheet3, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet3, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet3, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet3, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 9, 0, row)
 
 
-def create_tab4(workbook, worksheet0):
+def create_tab4(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#4 (Lab_Consensus) in the Excel file'''
 
     worksheet4 = workbook.add_worksheet('4.LabConsensus')
@@ -415,32 +441,33 @@ def create_tab4(workbook, worksheet0):
     p2fileVarIDs = []
     headerSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
         for SCV in scvHash[varID]:
             lab = ''
             sig = ''
-            if sub == scvHash[varID][SCV]['Submitter']:
-                lab = scvHash[varID][SCV]['LabCode']
+            if submitter == scvHash[varID][SCV]['Submitter']:
+                if 'LabCode' in scvHash[varID][SCV]:
+                    lab = scvHash[varID][SCV]['LabCode']
                 sig = scvHash[varID][SCV]['ClinSig']
 
                 for SCV in scvHash[varID]:
-                    if sub != scvHash[varID][SCV]['Submitter'] and scvHash[varID][SCV]['OrgID'] == lab and scvHash[varID][SCV]['ClinSig'] == sig:
+                    if submitter != scvHash[varID][SCV]['Submitter'] and scvHash[varID][SCV]['OrgID'] == lab and scvHash[varID][SCV]['ClinSig'] == sig:
                         headerSubs.append(scvHash[varID][SCV]['Submitter'])
                         if varID not in p2fileVarIDs:
                             p2fileVarIDs.append(varID)
 
     headerSubs = sorted(set(headerSubs))
 
-    print_header(p2fileVarIDs, headerSubs, worksheet4, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet4, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet4, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet4, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 10, 0, row)
 
 
-def create_tab5(workbook, worksheet0):
+def create_tab5(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#5 (EP_Conflict) in the Excel file'''
 
     worksheet5 = workbook.add_worksheet('5.EPConflict')
@@ -450,19 +477,19 @@ def create_tab5(workbook, worksheet0):
     p2fileVarIDs = {}
     headerSubs = []
 
-    for varID in gcVarIDs:
-        p2fileVarIDs, headerSubs = EP_outlier(varID, headerSubs, p2fileVarIDs, tab)
+    for varID in varIDs:
+        p2fileVarIDs, headerSubs = EP_outlier(varID, headerSubs, p2fileVarIDs, tab, submitter)
 
-    print_header(p2fileVarIDs, headerSubs, worksheet5, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet5, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet5, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet5, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 11, 0, row)
 
 
-def create_tab6(workbook, worksheet0):
+def create_tab6(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#6 (Outlier) in the Excel file'''
 
     worksheet6 = workbook.add_worksheet('6.Outlier')
@@ -472,19 +499,19 @@ def create_tab6(workbook, worksheet0):
     p2fileVarIDs = {}
     headerSubs = []
 
-    for varID in gcVarIDs:
-        p2fileVarIDs, headerSubs = outlier(varID, headerSubs, p2fileVarIDs, tab)
+    for varID in varIDs:
+        p2fileVarIDs, headerSubs = outlier(varID, headerSubs, p2fileVarIDs, tab, submitter)
 
-    print_header(p2fileVarIDs, headerSubs, worksheet6, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet6, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet6, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet6, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 12, 0, row)
 
 
-def create_tab7(workbook, worksheet0):
+def create_tab7(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#7 (Lab_NotSubmitted) in the Excel file'''
 
     worksheet7 = workbook.add_worksheet('7.LabNotSubmitted')
@@ -494,31 +521,32 @@ def create_tab7(workbook, worksheet0):
     p2fileVarIDs = []
     headerSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
         labs = []
         include = 'Yes'
         for SCV in scvHash[varID]:
-            if sub == scvHash[varID][SCV]['Submitter']:
-                labs.append(scvHash[varID][SCV]['LabCode'])
+            if submitter == scvHash[varID][SCV]['Submitter']:
+                if 'LabCode' in scvHash[varID][SCV]:
+                    labs.append(scvHash[varID][SCV]['LabCode'])
 
         for SCV in scvHash[varID]:
-            if sub != scvHash[varID][SCV]['Submitter'] and (scvHash[varID][SCV]['OrgID'] in labs or scvHash[varID][SCV]['OrgID'] != 'None'):
+            if submitter != scvHash[varID][SCV]['Submitter'] and (scvHash[varID][SCV]['OrgID'] in labs or scvHash[varID][SCV]['OrgID'] != 'None'):
                 include = 'No'
 
         if include == 'Yes':
             if varID not in p2fileVarIDs:
                 p2fileVarIDs.append(varID)
 
-    print_header(p2fileVarIDs, headerSubs, worksheet7, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet7, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet7, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet7, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 13, 0, row)
 
 
-def create_tab8(workbook, worksheet0):
+def create_tab8(workbook, worksheet0, submitter, varIDs):
     '''This function creates the Tab#8 (Lab_NoOrgID) in the Excel file'''
 
     worksheet8 = workbook.add_worksheet('8.LabNoOrgID')
@@ -528,23 +556,23 @@ def create_tab8(workbook, worksheet0):
     p2fileVarIDs = []
     headerSubs = []
 
-    for varID in gcVarIDs:
+    for varID in varIDs:
 
         for SCV in scvHash[varID]:
-            if sub == scvHash[varID][SCV]['Submitter'] and 'NoLabCode' in scvHash[varID][SCV] and scvHash[varID][SCV]['NoLabCode'] == 'None':
+            if submitter == scvHash[varID][SCV]['Submitter'] and 'NoLabCode' in scvHash[varID][SCV] and scvHash[varID][SCV]['NoLabCode'] == 'None':
                 if varID not in p2fileVarIDs:
                     p2fileVarIDs.append(varID)
 
-    print_header(p2fileVarIDs, headerSubs, worksheet8, tab)
+    print_header(p2fileVarIDs, headerSubs, worksheet8, tab, submitter)
 
     for varID in p2fileVarIDs:
-        varSubs = get_varSubs(varID)
-        row = print_variants(worksheet8, row, varID, headerSubs, varSubs, p2fileVarIDs, tab)
+        varSubs = get_varSubs(varID, submitter)
+        row = print_variants(worksheet8, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter)
 
     print_stats(worksheet0, 14, 0, row)
 
 
-def EP_outlier(varID, headerSubs, p2fileVarIDs, tab):
+def EP_outlier(varID, headerSubs, p2fileVarIDs, tab, submitter):
     '''This function returns the submitters where the clinical significance is discrepant from an Expert Panel or Practice Guideline'''
 
     clinSig = ''
@@ -552,7 +580,7 @@ def EP_outlier(varID, headerSubs, p2fileVarIDs, tab):
 
     if varID in EPHash:
         for SCV in scvHash[varID]:
-            if scvHash[varID][SCV]['Submitter'] == sub and (scvHash[varID][SCV]['ClinSig'] == 'Pathogenic' or scvHash[varID][SCV]['ClinSig'] == 'Likely pathogenic' or \
+            if scvHash[varID][SCV]['Submitter'] == submitter and (scvHash[varID][SCV]['ClinSig'] == 'Pathogenic' or scvHash[varID][SCV]['ClinSig'] == 'Likely pathogenic' or \
                scvHash[varID][SCV]['ClinSig'] == 'Uncertain significance' or scvHash[varID][SCV]['ClinSig'] == 'Likely benign' or scvHash[varID][SCV]['ClinSig'] == 'Benign'):
                 clinSig = scvHash[varID][SCV]['ClinSig']
 
@@ -571,7 +599,7 @@ def EP_outlier(varID, headerSubs, p2fileVarIDs, tab):
                 if varID not in p2fileVarIDs.keys():
                     p2fileVarIDs[varID] = {}
 
-                subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab)
+                subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab, submitter)
 
                 p2fileVarIDs[varID] = {'Total':total, 'PLP':plp, 'VUS':vus, 'LBB':lbb, 'Misc':other, 'EP':EPHash[varID]['Submitter'], 'EP_clinSig':EPHash[varID]['ClinSig']}
                 p2fileVarIDs[varID].update({'EPConflict':EPconflict})
@@ -580,16 +608,16 @@ def EP_outlier(varID, headerSubs, p2fileVarIDs, tab):
                     headerSubs.extend(submitters)
 
     headerSubs = sorted(set(headerSubs))
-    if sub in headerSubs:
-        headerSubs.remove(sub)
+    if submitter in headerSubs:
+        headerSubs.remove(submitter)
 
     return(p2fileVarIDs, headerSubs)
 
 
-def outlier(varID, headerSubs, p2fileVarIDs, tab):
+def outlier(varID, headerSubs, p2fileVarIDs, tab, submitter):
     '''This function returns the outlier submitters in a medically significant VarID'''
 
-    subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab)
+    subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other = get_pathCounts(varID, tab, submitter)
 
     conflict = ''
 
@@ -604,8 +632,8 @@ def outlier(varID, headerSubs, p2fileVarIDs, tab):
             headerSubs.extend(submitters)
 
     headerSubs = sorted(set(headerSubs))
-    if sub in headerSubs:
-        headerSubs.remove(sub)
+    if submitter in headerSubs:
+        headerSubs.remove(submitter)
 
     if 'P' in subSignificance:
         if vus == 0 and lbb != 0:
@@ -643,7 +671,7 @@ def outlier(varID, headerSubs, p2fileVarIDs, tab):
     return(p2fileVarIDs, headerSubs)
 
 
-def get_pathCounts(varID, tab):
+def get_pathCounts(varID, tab, submitter):
     '''This function returns the counts of ACMG pathogenicities for each VarID'''
 
     submitters = []
@@ -660,12 +688,12 @@ def get_pathCounts(varID, tab):
 
         if SCV in scvHash[varID] and scvHash[varID][SCV]['ClinSig'] == 'Pathogenic':
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 subSignificance.append('P')
                 p += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or \
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or \
                (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' or 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
@@ -673,12 +701,12 @@ def get_pathCounts(varID, tab):
 
         if SCV in scvHash[varID] and scvHash[varID][SCV]['ClinSig'] == 'Likely pathogenic':
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 subSignificance.append('P')
                 lp += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or \
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or \
                (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' or 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
@@ -686,12 +714,12 @@ def get_pathCounts(varID, tab):
 
         if SCV in scvHash[varID] and scvHash[varID][SCV]['ClinSig'] == 'Uncertain significance':
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 subSignificance.append('VUS')
                 vus += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or \
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or \
                (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' or 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
@@ -699,35 +727,35 @@ def get_pathCounts(varID, tab):
 
         if SCV in scvHash[varID] and scvHash[varID][SCV]['ClinSig'] == 'Likely benign':
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 subSignificance.append('B')
                 lb += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
                 lb += 1
 
         if SCV in scvHash[varID] and scvHash[varID][SCV]['ClinSig'] == 'Benign':
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 subSignificance.append('B')
                 b += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
                 b += 1
 
         else:
             current_sub = scvHash[varID][SCV]['Submitter'] + scvHash[varID][SCV]['ClinSig']
-            if scvHash[varID][SCV]['Submitter'] == sub and current_sub not in unique_subs:
+            if scvHash[varID][SCV]['Submitter'] == submitter and current_sub not in unique_subs:
                 unique_subs.append(current_sub)
                 other += 1
 
-            if scvHash[varID][SCV]['Submitter'] != sub and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
+            if scvHash[varID][SCV]['Submitter'] != submitter and current_sub not in unique_subs and (tab == 1 or (tab != 1 and (scvHash[varID][SCV]['ReviewStatus'] == 'criteria provided, single submitter' and 'clinical testing' in scvHash[varID][SCV]['ColMeth']))):
                 unique_subs.append(current_sub)
                 submitters.append(scvHash[varID][SCV]['Submitter'])
                 other += 1
@@ -742,13 +770,13 @@ def get_pathCounts(varID, tab):
     return(subSignificance, submitters, p, lp, plp, vus, lb, b, lbb, vlbb, total, other)
 
 
-def get_varSubs(varID):
+def get_varSubs(varID, submitter):
     '''This function returns the list of 1-star variant submitters'''
 
     varSubs = []
     if varID in scvHash:
         for SCV in scvHash[varID]:
-            if scvHash[varID][SCV]['Submitter'] != sub:
+            if scvHash[varID][SCV]['Submitter'] != submitter:
                 if scvHash[varID][SCV]['DateLastEval'] != '-':
                     #Convert date from YYYYMMDD -> YYYY-MM-DD
                     subPrintDate = print_date(scvHash[varID][SCV]['DateLastEval'])
@@ -761,11 +789,11 @@ def get_varSubs(varID):
     return(varSubs)
 
 
-def print_header(gcVarIDs, headerSubs, worksheet, tab):
+def print_header(varIDs, headerSubs, worksheet, tab, submitter):
     '''This function prints all the header titles to the Excel tabs'''
 
     k = 0
-    if gcVarIDs != []:
+    if varIDs != []:
         worksheet.write(0, k, 'VarID')
         k+=1
         worksheet.write(0, k, 'Gene_symbol')
@@ -791,20 +819,20 @@ def print_header(gcVarIDs, headerSubs, worksheet, tab):
             worksheet.write(0, k, 'Conflict_significance')
             k+=1
 
-        worksheet.write(0, k, sub + '_testing_lab(s)')
+        worksheet.write(0, k, submitter + '_testing_lab(s)')
         k+=1
-        worksheet.write(0, k, sub + '_testing_lab(s)_significance(s)')
+        worksheet.write(0, k, submitter + '_testing_lab(s)_significance(s)')
         k+=1
-        worksheet.write(0, k, sub + '_SCVid(s)')
+        worksheet.write(0, k, submitter + '_SCVid(s)')
         k+=1
-        worksheet.write(0, k, sub + '_testing_lab(s)_Date(s)LastEvaluated')
+        worksheet.write(0, k, submitter + '_testing_lab(s)_Date(s)LastEvaluated')
         k+=1
-        worksheet.write(0, k, sub + '_condition(s)')
+        worksheet.write(0, k, submitter + '_condition(s)')
         k+=1
 
         if tab != 5 and tab != 7:
             for head in headerSubs:
-                if head != sub:
+                if head != submitter:
                     worksheet.write(0, k, head)
                     k+=1
 
@@ -825,7 +853,7 @@ def print_header(gcVarIDs, headerSubs, worksheet, tab):
         worksheet.write(0, 0, 'No variants found')
 
 
-def print_variants(worksheet, row, varID, headerSubs, varSubs, p2fileVarIDs, tab):
+def print_variants(worksheet, row, varID, headerSubs, varSubs, p2fileVarIDs, tab, submitter):
     '''This function prints all the variants to the Excel tabs'''
 
     row += 1
@@ -881,8 +909,9 @@ def print_variants(worksheet, row, varID, headerSubs, varSubs, p2fileVarIDs, tab
     conditions = []
 
     for scv in scvHash[varID]:
-        if scvHash[varID][scv]['Submitter'] == sub:
-            labs.append(scvHash[varID][scv]['LabName'])
+        if scvHash[varID][scv]['Submitter'] == submitter:
+            if 'LabName' in scvHash[varID][scv]:
+                labs.append(scvHash[varID][scv]['LabName'])
             clinSig.append(scvHash[varID][scv]['ClinSig'])
             scvs.append(scv)
             #dle.append(print_date(scvHash[varID][scv]['DateLastEval']))
@@ -978,7 +1007,7 @@ def main():
     create_scvHash(inputFile2)
     add_labdata(inputFile1)
 
-    excelFile = 'GenomeConnectReport_' + date + '.xlsx'
+    excelFile = '_' + date + '.xlsx'
 
     create_a2vHash(inputFile3)
     create_HGVSHash(inputFile4)
