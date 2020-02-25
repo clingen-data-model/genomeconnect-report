@@ -17,7 +17,7 @@ scvHash = {}
 a2vHash = {}
 HGVSHash = {}
 EPHash = {}
-submitters = ['GenomeConnect_ClinGen', 'GenomeConnect_CFC_International', 'GenomeConnect_CureCADASIL']
+submitters = ['GenomeConnect_Association_for_Creatine_Defici', 'GenomeConnect_CFC_International', 'GenomeConnect_ClinGen', 'GenomeConnect_CureCADASIL']
 
 # initialize
 for submitter in submitters:
