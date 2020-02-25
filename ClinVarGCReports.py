@@ -990,14 +990,14 @@ def print_stats(worksheet0, line, column, row):
 
 def main():
 
-    inputFile1 = 'ClinVarVariationRelease_00-latest.xml.gz' #path: pub/clinvar/xml/clinvar_variation/
+    inputFile1 = 'ClinVarVariationRelease_00-latest_weekly.xml.gz' #path: pub/clinvar/xml/clinvar_variation/
     inputFile2 = 'submission_summary.txt.gz' #path: /pub/clinvar/tab_delimited/
     inputFile3 = 'variation_allele.txt.gz' #path: /pub/clinvar/tab_delimited/
     inputFile4 = 'variant_summary.txt.gz' #path: /pub/clinvar/tab_delimited/
 
     dir = 'ClinVarGCReports'
 
-    get_file(inputFile1, '/pub/clinvar/xml/clinvar_variation/')
+    get_file(inputFile1, '/pub/clinvar/xml/clinvar_variation/weekly_release/')
     date = get_file(inputFile2, '/pub/clinvar/tab_delimited/')
     get_file(inputFile3, '/pub/clinvar/tab_delimited/')
     get_file(inputFile4, '/pub/clinvar/tab_delimited/')
