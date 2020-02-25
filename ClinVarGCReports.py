@@ -176,7 +176,7 @@ def add_labdata(gzfile):
 
                                             if Attr.text != None:
                                                 labName = Attr.text
-                                                labName = name_mangle(labName)
+                                                labName = re.sub('[^0-9a-zA-Z]+', '_', labName)
                                             else:
                                                 if labCode != 'None' and labCode in submitterDict:
                                                     labName = submitterDict[labCode]
@@ -313,7 +313,8 @@ def create_files(ExcelDir, excelFile, date):
 
         for tab in tabList:
             tab(workbook, worksheet0, submitter, varIDs)
-            workbook.close()
+
+        workbook.close()
 
 
 def convert_date(date):
